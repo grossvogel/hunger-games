@@ -1,0 +1,107 @@
+<!doctype html>
+
+<html>
+
+	<head>
+		<title>Hunger Games in the Browser</title>
+		<meta charset="utf-8" />
+		<link href='https://fonts.googleapis.com/css?family=Open+Sans:400italic,400,700' rel='stylesheet' type='text/css' />
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
+		<style type="text/css">
+			html{
+				font-family:"Open Sans", sans-serif;
+			}
+			#players li{
+				font-size:20px;
+				list-style:none;
+				padding: 4px 0;
+			}
+			#players .name{
+				display:inline-block;
+				margin-right:20px;
+				text-align:right;
+				width: 150px;
+			}
+			#players .food{
+				display:inline-block;
+				overflow:hidden;
+				background:#cec;
+				padding: 4px;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="connectedContainer" style="display:none;">
+			<ul id="players">
+			</ul>
+			<div>
+				Current round: <span id="currentRound"></span>
+			</div>
+			<input type="button" id="disconnect" value="Reset" />
+		</div>
+		<div id="notConnectedContainer">
+			<input type="button" id="connect" value="Begin" />
+		</div>
+
+		<script type="text/javascript">
+			var max_bar_width = 700;
+			var socket;
+			var connect = function () {
+				socket = new WebSocket("ws://localhost:8080");
+				var writePlayer = function (player) {
+					var li = $('<li><span class="name"></span><div class="food"></div></li>');
+					li.find('span').text (player.player);
+					li.appendTo ($("#players"));
+				};
+				var updatePlayerStats = function (index, player, max_food) {
+					var jqPlayer = $("#players li").eq(index);
+					var jqBar = jqPlayer.find('.food');
+					jqBar.text (" " + player.food);
+					jqBar.css ('width', player.food / max_food * max_bar_width);
+					if (player.food <= 0) {
+						jqPlayer.find('.name').css ({
+							'text-decoration': 'line-through',
+							'color':'red'
+						});
+						jqBar.css ('padding', '4px 0 4px 0');
+					}
+				};
+				socket.onmessage = function (evt) {
+					response = $.parseJSON(evt.data);
+					var fresh = ($("#players li").length == 0);
+					$.each (response.players, function (index, player) {
+						if (fresh) {
+							writePlayer(player);
+						}
+						updatePlayerStats(index, player, response.max_food);
+					});
+					$("#currentRound").text (response.round);
+				};
+				socket.onclose = function () { 
+					$("#connectedContainer").hide ();
+					$("#notConnectedContainer").show();
+				}
+				socket.onopen = function () { 
+					$("#connectedContainer").show ();
+					$("#notConnectedContainer").hide ();
+					$("#players li").remove ();
+				}
+			}
+
+			$("#connect").on ('click', function () { connect (); } );
+			$("#disconnect").on ('click', function () { socket.close (); });
+			
+		</script>
+		<pre>
+TODO
+ * do another bar for each players' reputation
+ * detect a final state, and notify the user, presenting the winner if it exists
+ * Control start, stop, reset by messages other than connect / disconnect
+ * Allow the client to tweak the speed of the simulation
+ * instead of hard-wiring the players, load all Player classes into an array 
+ 	and let the user choose which ones to include in the next simulation
+		</pre>
+	</body>
+
+</html>
