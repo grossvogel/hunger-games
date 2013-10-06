@@ -1,43 +1,65 @@
-require 'json'
-require "rubygems"
-require "websocket-gui"
 require "./lib/bootstrap.rb"
 include HungerGames
 
 class HungerGamesWebUI < WebsocketGui::Base
 
-	def initialize(rounds_per_iteration = 100, iteration_delay = 0.1, &arena_init_block)
-		super(tick_interval: iteration_delay)
-		@rounds_per_iteration = rounds_per_iteration
-		if block_given?
-			@arena_init = arena_init_block
-		else
-			raise "When creating a new #{self.class.name}, you must provide a block to initialize your HungerGames::Arena"
-		end
+	def initialize(options = {})
+		@hg_config = {
+			tick_interval: 0.1,
+			rounds_per_iteration: 200,
+			round_end_threshold: 100000,
+			round_end_chance: 0.05,
+		}
+		@running = false
+		@players = []
+
+		@hg_config.merge! options
+		super(tick_interval: @hg_config[:tick_interval])
 	end
 
 	view :web_client
 
 	on_tick do |connected|
-		if connected
+		if connected && @running
 			unless @winner
-				@winner = @arena.run(@rounds_per_iteration)
+				@winner = @arena.run(@hg_config[:rounds_per_iteration])
 				update_client
 			end
 		end
 	end
 
 	on_socket_open do |handshake|
-		puts "Client connected. Initializing the arena."
+		@players = []
+		all_players = {
+			all_players: HungerGames.all_player_classes
+		}
+		socket_send all_players.to_json
+	end
+
+	on_start do |params|
+		return if @players.empty?
+		@running = true
+		@hg_config[:rounds_per_iteration] = params['rounds_per_iteration'].to_i
+		@hg_config[:round_end_threshold] = params['round_end_threshold'].to_i
 		arena_init
-		raise "The block passed did not initialize an arena!" unless @arena.is_a?HungerGames::Arena
+	end
+
+	on_add_player do |params|
+		@players << params['player_name']
+	end
+
+	on_remove_player do |params|
+		@players.delete params['player_name']
 	end
 
 	private
 
 	def arena_init
-		@arena = @arena_init.call
 		@winner = nil
+		@arena = Arena.new(@hg_config[:round_end_threshold], @hg_config[:round_end_chance])
+		HungerGames.player_instances(@players).each do |player|
+			@arena << player
+		end
 	end
 
 	def update_client
@@ -62,21 +84,6 @@ class HungerGamesWebUI < WebsocketGui::Base
 	end
 end
 
-app = HungerGamesWebUI.new(300, 0.1) do
-	arena = Arena.new(100000, 0.05)
-	3.times do |i|
-		arena << RandomPlayerPlus.new(rand() * 0.8 + 0.1)
-	end
-	3.times do |i|
-		arena << StraightRep.new(rand() * 0.8 + 0.1)
-	end
-	arena << Hawk.new
-	arena << Dove.new
-	arena << EveryOther.new
-	arena << Mirror.new
-	arena << Climber.new
-	arena << SmartyPants.new(0.0, 0.1)
-	arena
-end
+app = HungerGamesWebUI.new()
 app.run!
 

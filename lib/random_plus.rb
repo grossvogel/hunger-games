@@ -1,8 +1,8 @@
 module HungerGames
 	#	hunt with the top X% of players 
 	class RandomPlayerPlus < Player
-		def initialize(threshold = 0.5)
-			@threshold = threshold
+		def initialize(threshold = nil)
+			@threshold = threshold || (rand() * 0.7 + 0.15)
 		end
 
 		def hunt_choices(round_number, current_food, current_reputation, m, other_player_reputations)

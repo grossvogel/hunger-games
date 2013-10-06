@@ -11,37 +11,84 @@
 			html{
 				font-family:"Open Sans", sans-serif;
 			}
-			#players li{
+			ul{
+				padding-left:0;
+			}
+			li{
 				font-size:20px;
 				list-style:none;
 				padding: 4px 0;
 			}
-			#players .name{
+
+			#all_players .selected{
+				background:#bdf;
+			}
+			#all_players li{
+				width: 200px;
+				cursor:pointer;
+				padding: 4px 12px;
+			}
+
+			#player_scores .name{
 				display:inline-block;
-				margin-right:20px;
 				text-align:right;
 				width: 150px;
 			}
-			#players .food{
+			#player_scores .food{
 				display:inline-block;
 				overflow:hidden;
 				background:#cec;
 				padding: 4px;
+				border:1px solid #eee;
+			}
+			.rep{
+				position:relative;
+				display:inline-block;
+				width: 10px;
+				padding: 4px;
+				margin: 0 12px 0 12px;
+				border:1px solid #eee;
+			}
+			.rep_bar{
+				background:#bdf;
+				width:100%;
+				height:20%;
+				position:absolute;
+				bottom:0;
+				left:0;
 			}
 		</style>
 	</head>
 
 	<body>
-		<div id="connectedContainer" style="display:none;">
-			<ul id="players">
+		<div class="view_state" data-state="Running" style="display:none;">
+			<h2>Games in progress</h2>
+			<ul id="player_scores">
 			</ul>
 			<div>
 				Current round: <span id="currentRound"></span>
 			</div>
-			<input type="button" id="disconnect" value="Reset" />
+			<input type="button" id="reset" value="Reset" />
 		</div>
-		<div id="notConnectedContainer">
-			<input type="button" id="connect" value="Begin" />
+		<div class="view_state" data-state="Choose Players" style="display:none;">
+			<h2>Select players to participate</h2>
+			<ul id="all_players">
+			</ul>
+			<p>
+				<label for="rounds_slider">Rounds per refresh:</label>
+				<input id="rounds_slider" type="range" value="200" min="10" max="1000" step="10" />
+				<input id="rounds" type="text" value="200" /> every 0.1 sec
+			</p>
+			<p>
+				<label for="game_length_slider">Approx. game length:</label>
+				<input id="game_length_slider" type="range" value="100" min="10" max="1000" step="" />
+				<input id="game_length" type="text" value="100" /> thousand rounds
+			</p>
+			<input type="button" id="start" value="Let the Hunger Games Begin!" />
+		</div>
+		<div class="view_state" data-state="Not Connected">
+			<h2>Disconnected... Connect to begin.</h2>
+			<input type="button" id="connect" value="Connect" />
 		</div>
 
 		<script type="text/javascript">
@@ -51,11 +98,12 @@
 				socket = new WebSocket("ws://localhost:8080");
 				var writePlayer = function (player) {
 					var li = $('<li><span class="name"></span><div class="food"></div></li>');
-					li.find('span').text (player.player);
-					li.appendTo ($("#players"));
+					li.find('.name').text (player.player);
+					$('<span class="rep"><span class="rep_bar"></span>&nbsp;</span>').insertAfter (li.find('.name'));
+					li.appendTo ($("#player_scores"));
 				};
 				var updatePlayerStats = function (index, player, max_food) {
-					var jqPlayer = $("#players li").eq(index);
+					var jqPlayer = $("#player_scores li").eq(index);
 					var jqBar = jqPlayer.find('.food');
 					jqBar.text (" " + player.food);
 					jqBar.css ('width', player.food / max_food * max_bar_width);
@@ -64,44 +112,91 @@
 							'text-decoration': 'line-through',
 							'color':'red'
 						});
-						jqBar.css ('padding', '4px 0 4px 0');
+						jqBar.css ({
+							'padding': '4px 0 4px 0',
+							'border': '0'
+						});
 					}
+					jqPlayer.find('.rep_bar').css ('height', (player.reputation.toFixed(2) * 100) + '%');
+					jqPlayer.find('.rep').attr ('title', 'Reputation: ' + player.reputation.toFixed(2));
+				};
+				var sendEvent = function (event, params) {
+					if (!params) {
+						params = {} 
+					}
+					socket.send (JSON.stringify ({
+						event: event,
+						params: params
+					}));
+				};
+				var switchState = function (newState) {
+					$(".view_state").hide ().filter ("[data-state='" + newState + "']").show ();
 				};
 				socket.onmessage = function (evt) {
 					response = $.parseJSON(evt.data);
-					var fresh = ($("#players li").length == 0);
-					$.each (response.players, function (index, player) {
-						if (fresh) {
-							writePlayer(player);
-						}
-						updatePlayerStats(index, player, response.max_food);
-					});
-					$("#currentRound").text (response.round);
+					if (response.players)
+					{
+						var fresh = ($("#player_scores li").length == 0);
+						$.each (response.players, function (index, player) {
+							if (fresh) {
+								writePlayer(player);
+							}
+							updatePlayerStats(index, player, response.max_food);
+						});
+						$("#currentRound").text (response.round);
+					}
+					else if (response.all_players)
+					{
+						$.each (response.all_players, function (index, player) {
+							$('<li data-name="' + player + '"></li>').text (player).appendTo ($("#all_players"));
+						});
+					}
 				};
 				socket.onclose = function () { 
-					$("#connectedContainer").hide ();
-					$("#notConnectedContainer").show();
+					switchState ("Not Connected");
 				}
 				socket.onopen = function () { 
-					$("#connectedContainer").show ();
-					$("#notConnectedContainer").hide ();
-					$("#players li").remove ();
+					switchState ("Choose Players");
+					$("#all_players li").removeClass ("selected");
 				}
+				$("#all_players").on ('click', 'li', function () {
+					$(this).toggleClass ('selected');
+					var player = $(this).attr ('data-name');
+					var eventName = $(this).hasClass ('selected') ? 'add_player' : 'remove_player';
+					sendEvent (eventName, { player_name: player });
+				});
+				$("#start").on ('click', function () {
+					if ($("#all_players .selected").length == 0)
+					{
+						alert ('Before starting, click some players to enter them in the next game.');
+						return;
+					}
+					$("#player_scores li").remove ();
+					sendEvent ('start', {
+						rounds_per_iteration: $("#rounds").val (),
+						round_end_threshold: ($("#game_length").val () * 1000)
+					});
+					switchState ("Running");
+				});
+				$("#reset").on ('click', function () {
+					switchState ("Choose Players");
+				});
 			}
 
 			$("#connect").on ('click', function () { connect (); } );
-			$("#disconnect").on ('click', function () { socket.close (); });
+
+			$.each (['rounds','game_length'], function (index, name) {
+				$("#" + name + "_slider").on ('change', function () {
+					$("#" + name).val ($(this).val ());
+				});
+				$("#" + name).on ('change', function () {
+					$("#" + name + "_slider").val ($(this).val ());
+				});
+			});
+
+			connect ();
 			
 		</script>
-		<pre>
-TODO
- * do another bar for each players' reputation
- * detect a final state, and notify the user, presenting the winner if it exists
- * Control start, stop, reset by messages other than connect / disconnect
- * Allow the client to tweak the speed of the simulation
- * instead of hard-wiring the players, load all Player classes into an array 
- 	and let the user choose which ones to include in the next simulation
-		</pre>
 	</body>
 
 </html>
