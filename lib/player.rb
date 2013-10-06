@@ -63,6 +63,9 @@ module HungerGames
 	end
 
 	#	get an array of all loaded classes that are subclasses of Player
+	#
+	#	NOTE: This method is NOT to be used by Player classes, nor are any
+	#		other tricks that might expose opponent or arena implementation details
 	def self.all_player_classes
 		self.constants.select{ |c| self.const_get(c) < self::Player }
 	end
@@ -70,6 +73,9 @@ module HungerGames
 	#	given an array of Player subclass names (as returned by all_player_classes),
 	#	create an instance of each one and return them in an array
 	#	if no array is passed, default to all
+	#
+	#	NOTE: This method is NOT to be used by Player classes, nor are any
+	#		other tricks that might expose opponent or arena implementation details
 	def self.player_instances(player_classes = nil)
 		player_classes ||= self.all_player_classes
 		player_classes.map{ |c| HungerGames.const_get(c).new }
